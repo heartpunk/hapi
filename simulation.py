@@ -3,7 +3,7 @@ import random
 import simpy
 
 MAX_TIME = 1000
-WORKERS = 3000
+WORKERS = 2750
 RATE = WORKERS
 
 
@@ -32,19 +32,23 @@ def scale(time):
     if phase(time) == 'spike':
         return base_rate * 10
     if phase(time) == 'choke':
-        return 250
+        return base_rate
 
 def clients(count, env, resource, cur_phase):
     return [env.process(resource_user(env, resource, cur_phase)) for i in range(int(count))]
 
 
-def resource_user(env, resource, cur_phase):
+def resource_user(env, resource, cur_phase, retry=0):
     start = env.now
+    if retry >= 9:
+        return
     with resource.request() as request:
+        yield env.timeout(random.uniform(0.0, 0.5)) # prevent retry storms
         ev = yield env.any_of([request, env.timeout(30)])
         if isinstance(list(ev.keys())[0], simpy.events.Timeout):
             print "failed to get resource at %s, %s" % (timing(env, start), cur_phase)
             resource.release(request)
+            yield env.process(resource_user(env, resource, cur_phase, retry=retry+1))
         else:
             print "got resource at %s, %s" % (timing(env, start), cur_phase)
             yield env.timeout(.1)
